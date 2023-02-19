@@ -28,6 +28,10 @@ func (s DefaultService) CopyValue(fromValue reflect.Value, toValue reflect.Value
 		return false
 	}
 
+	if !toValue.IsValid() {
+		return false
+	}
+
 	fromType := indirectType(fromValue.Type())
 	toType := indirectType(toValue.Type())
 
@@ -168,14 +172,20 @@ func Copy(from any, to any) {
 		for i := 0; i < fromType.NumField(); i++ {
 			fromField := fromType.Field(i)
 
-			if _, ok := toType.FieldByName(fromField.Name); !ok {
-				continue
-			}
+			if toField, ok := toType.FieldByName(fromField.Name); ok {
+				fromFieldValue := fromValue.FieldByName(fromField.Name)
+				toFieldValue := toValue.FieldByName(fromField.Name)
 
-			CopyService.CopyValue(
-				fromValue.FieldByName(fromField.Name),
-				toValue.FieldByName(fromField.Name),
-			)
+				if !toFieldValue.CanSet() {
+					continue
+				}
+
+				if toField.Type.Kind() == reflect.Pointer && toFieldValue.IsNil() {
+					toFieldValue.Set(reflect.New(indirectType(toField.Type)))
+				}
+
+				CopyService.CopyValue(fromFieldValue, toFieldValue)
+			}
 		}
 	} else if fromType.Kind() == reflect.Map && toType.Kind() == reflect.Map {
 		// map to map
@@ -207,14 +217,19 @@ func Copy(from any, to any) {
 		kv := fromValue.MapRange()
 
 		for kv.Next() {
-			if _, ok := toType.FieldByName(kv.Key().String()); !ok {
-				continue
-			}
+			if toField, ok := toType.FieldByName(kv.Key().String()); ok {
+				toFieldValue := toValue.FieldByName(kv.Key().String())
 
-			CopyService.CopyValue(
-				kv.Value(),
-				toValue.FieldByName(kv.Key().String()),
-			)
+				if !toFieldValue.CanSet() {
+					continue
+				}
+
+				if toField.Type.Kind() == reflect.Pointer && toFieldValue.IsNil() {
+					toFieldValue.Set(reflect.New(indirectType(toField.Type)))
+				}
+
+				CopyService.CopyValue(kv.Value(), toFieldValue)
+			}
 		}
 	} else if fromType.Kind() == reflect.Struct && toType.Kind() == reflect.Map {
 		// struct to map
